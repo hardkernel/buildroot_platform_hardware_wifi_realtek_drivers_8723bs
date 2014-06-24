@@ -619,6 +619,8 @@ struct mlme_priv {
 	u8	scanning_via_buddy_intf;
 #endif
 
+	u8 	NumOfBcnInfoChkFail;
+	u32	timeBcnInfoChkStart;
 };
 
 #define rtw_mlme_set_auto_scan_int(adapter, ms) \
@@ -654,6 +656,7 @@ extern void rtw_stassoc_event_callback(_adapter *adapter, u8 *pbuf);
 extern void rtw_stadel_event_callback(_adapter *adapter, u8 *pbuf);
 extern void rtw_atimdone_event_callback(_adapter *adapter, u8 *pbuf);
 extern void rtw_cpwm_event_callback(_adapter *adapter, u8 *pbuf);
+extern void rtw_wmm_event_callback(PADAPTER padapter, u8 *pbuf);
 
 extern void rtw_join_timeout_handler(RTW_TIMER_HDL_ARGS);
 extern void _rtw_scan_timeout_handler(RTW_TIMER_HDL_ARGS);

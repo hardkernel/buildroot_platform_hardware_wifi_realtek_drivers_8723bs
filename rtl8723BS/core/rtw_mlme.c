@@ -25,13 +25,6 @@
 extern void indicate_wx_scan_complete_event(_adapter *padapter);
 extern u8 rtw_do_join(_adapter * padapter);
 
-#ifdef CONFIG_DISABLE_MCS13TO15
-extern unsigned char	MCS_rate_2R_MCS13TO15_OFF[16];
-extern unsigned char	MCS_rate_2R[16];
-#else //CONFIG_DISABLE_MCS13TO15
-extern unsigned char	MCS_rate_2R[16];
-#endif //CONFIG_DISABLE_MCS13TO15
-extern unsigned char	MCS_rate_1R[16];
 
 sint	_rtw_init_mlme_priv (_adapter* padapter)
 {
@@ -540,15 +533,18 @@ void rtw_free_network(struct mlme_priv *pmlmepriv, struct	wlan_network *pnetwork
 _func_enter_;		
 	RT_TRACE(_module_rtl871x_mlme_c_,_drv_err_,("rtw_free_network==> ssid = %s \n\n" , pnetwork->network.Ssid.Ssid));
 	_rtw_free_network(pmlmepriv, pnetwork, is_freeall);
-_func_exit_;		
+_func_exit_;
 }
 
-void rtw_free_network_nolock(struct mlme_priv *pmlmepriv, struct wlan_network *pnetwork );
-void rtw_free_network_nolock(struct mlme_priv *pmlmepriv, struct wlan_network *pnetwork )
+void rtw_free_network_nolock(_adapter * padapter, struct wlan_network *pnetwork );
+void rtw_free_network_nolock(_adapter * padapter, struct wlan_network *pnetwork )
 {
 _func_enter_;		
 	//RT_TRACE(_module_rtl871x_mlme_c_,_drv_err_,("rtw_free_network==> ssid = %s \n\n" , pnetwork->network.Ssid.Ssid));
-	_rtw_free_network_nolock(pmlmepriv, pnetwork);
+	_rtw_free_network_nolock(&(padapter->mlmepriv), pnetwork);
+#ifdef CONFIG_IOCTL_CFG80211
+	rtw_cfg80211_unlink_bss(padapter, pnetwork);
+#endif //CONFIG_IOCTL_CFG80211
 _func_exit_;		
 }
 
@@ -1449,6 +1445,14 @@ _func_enter_;
 	
 _func_exit_;
 }
+
+void rtw_reset_rx_info(struct debug_priv *pdbgpriv){
+	pdbgpriv->dbg_rx_ampdu_drop_count = 0;
+	pdbgpriv->dbg_rx_ampdu_forced_indicate_count = 0;
+	pdbgpriv->dbg_rx_ampdu_loss_count = 0;
+	pdbgpriv->dbg_rx_dup_mgt_frame_drop_count = 0;
+	pdbgpriv->dbg_rx_ampdu_window_shift_cnt = 0;
+}
 	
 /*
 *rtw_free_assoc_resources: the caller has to lock pmlmepriv->lock
@@ -1457,9 +1461,12 @@ void rtw_free_assoc_resources(_adapter *adapter, int lock_scanned_queue)
 {
 	_irqL irqL;
 	struct wlan_network* pwlan = NULL;
-     	struct	mlme_priv *pmlmepriv = &adapter->mlmepriv;
-   	struct	sta_priv *pstapriv = &adapter->stapriv;
+	struct	mlme_priv *pmlmepriv = &adapter->mlmepriv;
+	struct	sta_priv *pstapriv = &adapter->stapriv;
 	struct wlan_network *tgt_network = &pmlmepriv->cur_network;
+	struct dvobj_priv *psdpriv = adapter->dvobj;
+	struct debug_priv *pdbgpriv = &psdpriv->drv_dbg;	
+
 	
 #ifdef CONFIG_TDLS
 	struct tdls_info *ptdlsinfo = &adapter->tdlsinfo;
@@ -1554,13 +1561,15 @@ _func_enter_;
 	if((check_fwstate(pmlmepriv, WIFI_ADHOC_MASTER_STATE) && (adapter->stapriv.asoc_sta_count== 1))
 		/*||check_fwstate(pmlmepriv, WIFI_STATION_STATE)*/)
 	{
-		rtw_free_network_nolock(pmlmepriv, pwlan); 
+		rtw_free_network_nolock(adapter, pwlan); 
 	}
 
 	if(lock_scanned_queue)
 		_exit_critical_bh(&(pmlmepriv->scanned_queue.lock), &irqL);
 	
 	adapter->securitypriv.key_mask = 0;
+
+	rtw_reset_rx_info(pdbgpriv);
 
 _func_exit_;	
 	
@@ -1808,6 +1817,7 @@ static struct sta_info *rtw_joinbss_update_stainfo(_adapter *padapter, struct wl
 			_rtw_memset((u8 *)&psta->dot11tkiptxmickey, 0, sizeof (union Keytype));
 						
 			_rtw_memset((u8 *)&psta->dot11txpn, 0, sizeof (union pn48));
+			psta->dot11txpn.val = psta->dot11txpn.val + 1;
 #ifdef CONFIG_IEEE80211W
 			_rtw_memset((u8 *)&psta->dot11wtxpn, 0, sizeof (union pn48));
 #endif //CONFIG_IEEE80211W
@@ -2316,6 +2326,10 @@ _func_enter_;
 			rtw_indicate_sta_assoc_event(adapter, psta);
 #endif //!CONFIG_IOCTL_CFG80211
 #endif //!CONFIG_AUTO_AP_MODE
+
+#ifdef CONFIG_BEAMFORMING
+			beamforming_wk_cmd(adapter, BEAMFORMING_CTRL_ENTER, (u8 *)psta, sizeof(struct sta_info), 0);
+#endif
 		}		
 		goto exit;
 	}	
@@ -2378,7 +2392,7 @@ _func_enter_;
 	
 #ifdef CONFIG_RTL8711
 	//submit SetStaKey_cmd to tell fw, fw will allocate an CAM entry for this sta	
-	rtw_setstakey_cmd(adapter, (unsigned char*)psta, _FALSE, _TRUE);
+	rtw_setstakey_cmd(adapter, psta, _FALSE, _TRUE);
 #endif
 		
 exit:
@@ -2479,7 +2493,7 @@ _func_enter_;
 		pwlan = rtw_find_network(&pmlmepriv->scanned_queue, tgt_network->network.MacAddress);	
 		if (pwlan) {			
 			pwlan->fixed = _FALSE;
-			rtw_free_network_nolock(pmlmepriv, pwlan);
+			rtw_free_network_nolock(adapter, pwlan);
 		}
 		_exit_critical_bh(&(pmlmepriv->scanned_queue.lock), &irqL);
 
@@ -2509,7 +2523,7 @@ _func_enter_;
 			if(pwlan)	
 			{
 				pwlan->fixed = _FALSE;
-				rtw_free_network_nolock(pmlmepriv, pwlan); 
+				rtw_free_network_nolock(adapter, pwlan); 
 			}
 			_exit_critical_bh(&(pmlmepriv->scanned_queue.lock), &irqL);
 			//re-create ibss
@@ -2564,6 +2578,17 @@ _func_enter_;
 	preportpwrstate->state |= (u8)(adapter_to_pwrctl(padapter)->cpwm_tog + 0x80);
 	cpwm_int_hdl(padapter, preportpwrstate);
 #endif
+
+_func_exit_;
+
+}
+
+
+void rtw_wmm_event_callback(PADAPTER padapter, u8 *pbuf)
+{
+_func_enter_;
+
+	WMMOnAssocRsp(padapter);
 
 _func_exit_;
 
@@ -2692,6 +2717,8 @@ void rtw_scan_timeout_handler (_adapter *adapter)
 void rtw_mlme_reset_auto_scan_int(_adapter *adapter)
 {
 	struct mlme_priv *mlme = &adapter->mlmepriv;
+	struct mlme_ext_priv	*pmlmeext = &adapter->mlmeextpriv;
+	struct mlme_ext_info	*pmlmeinfo = &(pmlmeext->mlmext_info);
 
 #ifdef CONFIG_P2P
 	if(!rtw_p2p_chk_state(&adapter->wdinfo, P2P_STATE_NONE)) {
@@ -2699,8 +2726,11 @@ void rtw_mlme_reset_auto_scan_int(_adapter *adapter)
 		goto exit;
 	}
 #endif	
-
-	if(adapter->registrypriv.wifi_spec) {
+	if(pmlmeinfo->VHT_enable) //disable auto scan when connect to 11AC AP
+	{
+		mlme->auto_scan_int_ms = 0;
+	}
+	else if(adapter->registrypriv.wifi_spec && is_client_associated_to_ap(adapter) == _TRUE) {
 		mlme->auto_scan_int_ms = 60*1000;
 #ifdef CONFIG_LAYER2_ROAMING
 	} else if(rtw_chk_roam_flags(adapter, RTW_ROAM_ACTIVE)) {
@@ -3817,6 +3847,7 @@ unsigned int rtw_restructure_ht_ie(_adapter *padapter, u8 *in_ie, u8 *out_ie, ui
 	struct registry_priv *pregistrypriv = &padapter->registrypriv;
 	struct mlme_priv	*pmlmepriv = &padapter->mlmepriv;
 	struct ht_priv		*phtpriv = &pmlmepriv->htpriv;
+	struct mlme_ext_priv	*pmlmeext = &padapter->mlmeextpriv;
 
 	phtpriv->ht_option = _FALSE;
 
@@ -3890,17 +3921,21 @@ unsigned int rtw_restructure_ht_ie(_adapter *padapter, u8 *in_ie, u8 *out_ie, ui
 		}
 	}
 
+	//fill default supported_mcs_set
+	_rtw_memcpy(ht_capie.supp_mcs_set, pmlmeext->default_supported_mcs_set, 16);
+
+	//update default supported_mcs_set
 	rtw_hal_get_hwreg(padapter, HW_VAR_RF_TYPE, (u8 *)(&rf_type));
-#ifdef RTL8192C_RECONFIG_TO_1T1R
-	rf_type = RF_1T1R;
-#endif
-	switch (rf_type) {
+
+	switch(rf_type)
+	{
 	case RF_1T1R:
+		
 		if (stbc_rx_enable)
 			ht_capie.cap_info |= IEEE80211_HT_CAP_RX_STBC_1R;//RX STBC One spatial stream
 
-		_rtw_memcpy(ht_capie.supp_mcs_set, MCS_rate_1R, 16);
-		break;
+	                set_mcs_rate_by_mask(ht_capie.supp_mcs_set, MCS_RATE_1R);			
+			break;
 
 	case RF_2T2R:
 	case RF_1T2R:
@@ -3911,11 +3946,11 @@ unsigned int rtw_restructure_ht_ie(_adapter *padapter, u8 *in_ie, u8 *out_ie, ui
 
 		#ifdef CONFIG_DISABLE_MCS13TO15
 		if(((cbw40_enable == 1) && (operation_bw == CHANNEL_WIDTH_40)) && (pregistrypriv->wifi_spec!=1))
-			_rtw_memcpy(ht_capie.supp_mcs_set, MCS_rate_2R_MCS13TO15_OFF, 16);
+				set_mcs_rate_by_mask(ht_capie.supp_mcs_set, MCS_RATE_2R_13TO15_OFF);	
 		else
-			_rtw_memcpy(ht_capie.supp_mcs_set, MCS_rate_2R, 16);
+				set_mcs_rate_by_mask(ht_capie.supp_mcs_set, MCS_RATE_2R);	
 		#else //CONFIG_DISABLE_MCS13TO15
-		_rtw_memcpy(ht_capie.supp_mcs_set, MCS_rate_2R, 16);
+			set_mcs_rate_by_mask(ht_capie.supp_mcs_set, MCS_RATE_2R);	
 		#endif //CONFIG_DISABLE_MCS13TO15
 		break;
 	}
@@ -3942,7 +3977,12 @@ unsigned int rtw_restructure_ht_ie(_adapter *padapter, u8 *in_ie, u8 *out_ie, ui
 	#endif
 	*/
 
+	if(padapter->driver_rx_ampdu_factor != 0xFF)
+		max_rx_ampdu_factor = (HT_CAP_AMPDU_FACTOR)padapter->driver_rx_ampdu_factor;
+	else
 	rtw_hal_get_def_var(padapter, HW_VAR_MAX_RX_AMPDU_FACTOR, &max_rx_ampdu_factor);
+				
+	//rtw_hal_get_def_var(padapter, HW_VAR_MAX_RX_AMPDU_FACTOR, &max_rx_ampdu_factor);
 	ht_capie.ampdu_params_info = (max_rx_ampdu_factor&0x03);
 
 	if(padapter->securitypriv.dot11PrivacyAlgrthm == _AES_ )
@@ -4025,7 +4065,9 @@ void rtw_update_ht_cap(_adapter *padapter, u8 *pie, uint ie_len, u8 channel)
 	{
 		if(pregistrypriv->wifi_spec==1)
 		{
-			phtpriv->ampdu_enable = _FALSE;
+			//remove this part because testbed AP should disable RX AMPDU
+			//phtpriv->ampdu_enable = _FALSE;
+			phtpriv->ampdu_enable = _TRUE;
 		}
 		else
 		{
@@ -4034,7 +4076,8 @@ void rtw_update_ht_cap(_adapter *padapter, u8 *pie, uint ie_len, u8 channel)
 	}
 	else if(pregistrypriv->ampdu_enable==2)
 	{
-		phtpriv->ampdu_enable = _TRUE;
+		//remove this part because testbed AP should disable RX AMPDU
+		//phtpriv->ampdu_enable = _TRUE;
 	}
 
 	
@@ -4077,34 +4120,31 @@ void rtw_update_ht_cap(_adapter *padapter, u8 *pie, uint ie_len, u8 channel)
 		int i;
 		u8	rf_type;
 
-		padapter->HalFunc.GetHwRegHandler(padapter, HW_VAR_RF_TYPE, (u8 *)(&rf_type));
+		rtw_hal_get_hwreg(padapter, HW_VAR_RF_TYPE, (u8 *)(&rf_type));
+
+		//update the MCS set
+		for (i = 0; i < 16; i++)
+			pmlmeinfo->HT_caps.u.HT_cap_element.MCS_rate[i] &= pmlmeext->default_supported_mcs_set[i];
 
 		//update the MCS rates
-		for (i = 0; i < 16; i++)
+		switch(rf_type)
 		{
-			if((rf_type == RF_1T1R) || (rf_type == RF_1T2R))
-			{
-				pmlmeinfo->HT_caps.u.HT_cap_element.MCS_rate[i] &= MCS_rate_1R[i];
-			}
-			else
-			{
-				#ifdef CONFIG_DISABLE_MCS13TO15
-				if(pmlmeext->cur_bwmode == CHANNEL_WIDTH_40 && pregistrypriv->wifi_spec != 1 )
-				{
-					pmlmeinfo->HT_caps.u.HT_cap_element.MCS_rate[i] &= MCS_rate_2R_MCS13TO15_OFF[i];
-				}
+			case RF_1T1R:
+			case RF_1T2R:
+				set_mcs_rate_by_mask(pmlmeinfo->HT_caps.u.HT_cap_element.MCS_rate, MCS_RATE_1R);							
+				break;
+			case RF_2T2R:			
+			default:
+#ifdef CONFIG_DISABLE_MCS13TO15
+				if(pmlmeext->cur_bwmode == CHANNEL_WIDTH_40 && pregistrypriv->wifi_spec != 1 )				
+					set_mcs_rate_by_mask(pmlmeinfo->HT_caps.u.HT_cap_element.MCS_rate, MCS_RATE_2R_13TO15_OFF);				
 				else
-					pmlmeinfo->HT_caps.u.HT_cap_element.MCS_rate[i] &= MCS_rate_2R[i];
-				#else
-				pmlmeinfo->HT_caps.u.HT_cap_element.MCS_rate[i] &= MCS_rate_2R[i];
-				#endif //CONFIG_DISABLE_MCS13TO15
-			}
-			#ifdef RTL8192C_RECONFIG_TO_1T1R
-			{
-				pmlmeinfo->HT_caps.HT_cap_element.MCS_rate[i] &= MCS_rate_1R[i];
-			}
-			#endif
+					set_mcs_rate_by_mask(pmlmeinfo->HT_caps.u.HT_cap_element.MCS_rate, MCS_RATE_2R);
+#else //CONFIG_DISABLE_MCS13TO15
+				set_mcs_rate_by_mask(pmlmeinfo->HT_caps.u.HT_cap_element.MCS_rate, MCS_RATE_2R);
+#endif //CONFIG_DISABLE_MCS13TO15
 		}
+
 		//switch to the 40M Hz mode accoring to the AP
 		//pmlmeext->cur_bwmode = CHANNEL_WIDTH_40;
 		switch ((pmlmeinfo->HT_info.infos[0] & 0x3))

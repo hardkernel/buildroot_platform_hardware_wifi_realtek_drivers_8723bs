@@ -160,6 +160,7 @@ void update_recvframe_phyinfo(
 	//rtl8723b_query_rx_phy_status(precvframe, pphy_status);
 	//_enter_critical_bh(&pHalData->odm_stainfo_lock, &irqL);
 	ODM_PhyStatusQuery(&pHalData->odmpriv,pPHYInfo,(u8 *)pphy_status,&(pkt_info));
+	if(psta) psta->rssi = pattrib->phy_info.RecvSignalPower;
 	//_exit_critical_bh(&pHalData->odm_stainfo_lock, &irqL);
 	precvframe->u.hdr.psta = NULL;
 	if (pkt_info.bPacketMatchBSSID &&
@@ -394,8 +395,11 @@ static void rtl8723bs_recv_tasklet(void *priv)
 							padapter->mppriv.rx_crcerrpktcount++;
 					}
 				}
+				else
 #endif
-				DBG_8192C("%s: crc_err=%d icv_err=%d, skip!\n", __FUNCTION__, pattrib->crc_err, pattrib->icv_err);
+				{
+					DBG_8192C("%s: crc_err=%d icv_err=%d, skip!\n", __FUNCTION__, pattrib->crc_err, pattrib->icv_err);
+				}
 				rtw_free_recvframe(precvframe, &precvpriv->free_recv_queue);
 			}
 			else
@@ -652,8 +656,11 @@ static void rtl8723bs_recv_tasklet(void *priv)
 							padapter->mppriv.rx_crcerrpktcount++;
 					}
 				}
+				else
 #endif
-				DBG_8192C("%s: crc_err=%d icv_err=%d, skip!\n", __FUNCTION__, pattrib->crc_err, pattrib->icv_err);
+				{
+					DBG_8192C("%s: crc_err=%d icv_err=%d, skip!\n", __FUNCTION__, pattrib->crc_err, pattrib->icv_err);
+				}
 				rtw_free_recvframe(precvframe, &precvpriv->free_recv_queue);
 			}
 			else

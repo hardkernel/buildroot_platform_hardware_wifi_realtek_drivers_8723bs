@@ -188,6 +188,7 @@ u8 _InitPowerOn_8723BS(PADAPTER padapter)
 //	bMacPwrCtrlOn = _TRUE;
 //	rtw_hal_set_hwreg(padapter, HW_VAR_APFM_ON_MAC, &bMacPwrCtrlOn);
 
+	rtw_write8(padapter, REG_CR, 0x00);
 	// Enable MAC DMA/WMAC/SCHEDULE/SEC block
 	value16 = rtw_read16(padapter, REG_CR);
 	value16 |= (HCI_TXDMA_EN | HCI_RXDMA_EN | TXDMA_EN | RXDMA_EN
@@ -195,28 +196,7 @@ u8 _InitPowerOn_8723BS(PADAPTER padapter)
 	rtw_write16(padapter, REG_CR, value16);
 
 #ifdef CONFIG_BT_COEXIST
-	// Fix Antenna at BT side between power on and BT-Coex init HW
-	// enable BB power
-	rtw_write8(padapter, 0x67, 0x20);
-	value8 = rtw_read8(padapter, REG_SYS_FUNC_EN);
-	value8 |= FEN_BBRSTB | FEN_BB_GLB_RSTn;
-	rtw_write8(padapter, REG_SYS_FUNC_EN, value8);
-//	DBG_8192C("%s: 0x2=0x%02X\n", __FUNCTION__, rtw_read8(padapter, 0x2));
-
-	// internal switch BT->S1
-	// 0x948[12:0] = 0x280 
-	value32 = rtw_read32(padapter, 0x948);
-	value32 &= ~0x1FFF;
-	value32 |= 0x280;
-	rtw_write32(padapter, 0x948, value32);
-//	DBG_8192C("%s: 0x948=0x%04X\n", __FUNCTION__, rtw_read16(padapter, 0x948));
-
-	// mask wlan_act to low
-	// 0x76e[3] = 0
-	value8 = rtw_read8(padapter, 0x76e);
-	value8 &= ~BIT(3);
-	rtw_write8(padapter, 0x76e, value8);
-//	DBG_8192C("%s: 0x76e=0x%02X\n", __FUNCTION__, rtw_read8(padapter, 0x76e));
+	rtw_btcoex_PowerOnSetting(padapter);
 
 	// external switch to S1
 	// 0x38[11] = 0x1
@@ -237,7 +217,6 @@ u8 _InitPowerOn_8723BS(PADAPTER padapter)
 	value8 &= ~BIT(0); // BIT_SW_DPDT_SEL_DATA, DPDT_SEL default configuration
 	rtw_write8(padapter, REG_PAD_CTRL1_8723B, value8);
 //	DBG_8192C("%s: REG_PAD_CTRL1(0x%x)=0x%02X\n", __FUNCTION__, REG_PAD_CTRL1_8723B, rtw_read8(padapter, REG_PAD_CTRL1_8723B));
-	rtw_write8(padapter, 0x765, 0x18);
 #endif // CONFIG_BT_COEXIST
 
 #ifdef CONFIG_GPIO_WAKEUP
@@ -830,25 +809,6 @@ void _InitOperationMode(PADAPTER padapter)
 
 	rtw_write8(padapter, REG_BWOPMODE, regBwOpMode);
 
-	// For Min Spacing configuration.
-	switch(pHalData->rf_type)
-	{
-		case RF_1T2R:
-		case RF_1T1R:
-			RT_TRACE(_module_hci_hal_init_c_, _drv_info_, ("Initializepadapter: RF_Type%s\n", (pHalData->rf_type==RF_1T1R? "(1T1R)":"(1T2R)")));
-//			padapter->MgntInfo.MinSpaceCfg = (MAX_MSS_DENSITY_1T<<3);
-			MinSpaceCfg = (MAX_MSS_DENSITY_1T << 3);
-			break;
-		case RF_2T2R:
-		case RF_2T2R_GREEN:
-			RT_TRACE(_module_hci_hal_init_c_, _drv_info_, ("Initializepadapter:RF_Type(2T2R)\n"));
-//			padapter->MgntInfo.MinSpaceCfg = (MAX_MSS_DENSITY_2T<<3);
-			MinSpaceCfg = (MAX_MSS_DENSITY_2T << 3);
-			break;
-	}
-
-//	rtw_write8(padapter, REG_AMPDU_MIN_SPACE, padapter->MgntInfo.MinSpaceCfg);
-	rtw_write8(padapter, REG_AMPDU_MIN_SPACE, MinSpaceCfg);
 }
 
 void _InitInterrupt(PADAPTER padapter)
@@ -1050,7 +1010,9 @@ static u32 rtl8723bs_hal_init(PADAPTER padapter)
 		pHalData->LastHMEBoxNum = 0;
 
 #ifdef CONFIG_BT_COEXIST
-		rtw_btcoex_HAL_Initialize(padapter);
+		rtw_btcoex_HAL_Initialize(padapter, _FALSE);
+#else
+		rtw_btcoex_HAL_Initialize(padapter, _TRUE);
 #endif // CONFIG_BT_COEXIST
 
 		return _SUCCESS;
@@ -1106,7 +1068,9 @@ static u32 rtl8723bs_hal_init(PADAPTER padapter)
 		rtw_hal_set_hwreg(padapter, HW_VAR_APFM_ON_MAC, &bMacPwrCtrlOn);		
 
 #ifdef CONFIG_BT_COEXIST
-		rtw_btcoex_HAL_Initialize(padapter);
+		rtw_btcoex_HAL_Initialize(padapter, _FALSE);
+#else
+		rtw_btcoex_HAL_Initialize(padapter, _TRUE);
 #endif // CONFIG_BT_COEXIST
 
 #ifdef DBG_CHECK_FW_PS_STATE
@@ -1155,27 +1119,14 @@ static u32 rtl8723bs_hal_init(PADAPTER padapter)
 
 	rtw_write8(padapter, REG_EARLY_MODE_CONTROL, 0);
 
-	/* 
-		To inform FW about:
-		bit0: "0" for no antenna inverse; "1" for antenna inverse 
-		bit1: "0" for internal switch; "1" for external switch
-		bit2: "0" for one antenna; "1" for two antenna 
-	*/
-	u1bTmp = 0;
-	if (pHalData->EEPROMBluetoothAntNum == Ant_x2)
-	{
-		u1bTmp |= BIT(2); /* two antenna case */
-	}
-	rtw_write8(padapter, SDIO_LOCAL_BASE |0x60, u1bTmp);
-
 #if (MP_DRIVER == 1)
 	if (padapter->registrypriv.mp_mode == 1)
 	{
 		_InitRxSetting(padapter);
 	}
-	else
+
 #endif
-	{
+	
 		ret = rtl8723b_FirmwareDownload(padapter, _FALSE);
 		if (ret != _SUCCESS) {
 			RT_TRACE(_module_hci_hal_init_c_, _drv_err_, ("%s: Download Firmware failed!!\n", __FUNCTION__));
@@ -1187,7 +1138,6 @@ static u32 rtl8723bs_hal_init(PADAPTER padapter)
 			padapter->bFWReady = _TRUE;
 			pHalData->fw_ractrl = _TRUE;
 		}
-	}
 
 	rtl8723b_InitializeFirmwareVars(padapter);
 
@@ -1245,8 +1195,6 @@ static u32 rtl8723bs_hal_init(PADAPTER padapter)
 	pHalData->RfRegChnlVal[0] = PHY_QueryRFReg(padapter, (RF_PATH)0, RF_CHNLBW, bRFRegOffsetMask);
 	pHalData->RfRegChnlVal[1] = PHY_QueryRFReg(padapter, (RF_PATH)1, RF_CHNLBW, bRFRegOffsetMask);
 
-	rtw_write8(padapter, REG_CR, 0);
-	rtw_write8(padapter, REG_CR, 0xff);
 	
 	//if (!pHalData->bMACFuncEnable) {
 		_InitQueueReservedPage(padapter);
@@ -1412,7 +1360,7 @@ static u32 rtl8723bs_hal_init(PADAPTER padapter)
 #endif
 			restore_iqk_rst = (pwrpriv->bips_processing==_TRUE)?_TRUE:_FALSE;
 			b2Ant = pHalData->EEPROMBluetoothAntNum==Ant_x2?_TRUE:_FALSE;
-			PHY_IQCalibrate_8723B(padapter, _FALSE, restore_iqk_rst, b2Ant, 0);
+			PHY_IQCalibrate_8723B(padapter, _FALSE, restore_iqk_rst, b2Ant, pHalData->ant_path);
 			pHalData->odmpriv.RFCalibrateInfo.bIQKInitialized = _TRUE;
 #ifdef CONFIG_BT_COEXIST
 			rtw_btcoex_IQKNotify(padapter, _FALSE);
@@ -1428,17 +1376,9 @@ static u32 rtl8723bs_hal_init(PADAPTER padapter)
 
 #ifdef CONFIG_BT_COEXIST
 	// Init BT hw config.
-	rtw_btcoex_HAL_Initialize(padapter);
-	rtw_btcoex_SwitchGntBt(padapter);
+	rtw_btcoex_HAL_Initialize(padapter, _FALSE);
 #else
-	u4Tmp = rtw_read32(padapter, REG_BT_WIFI_ANTENNA_SWITCH_8723B); //Ant select enable
-	u4Tmp |= BIT11;
-	rtw_write32(padapter, REG_BT_WIFI_ANTENNA_SWITCH_8723B, u4Tmp);
-
-	rtw_write8(padapter, 0x974, 0xff);
-	//pBtCoexist->fBtcWrite1ByteBitMask(pBtCoexist, 0x944, 0x3, 0x3);
-	rtw_write8(padapter, 0x930, 0x77);
-	rtw_write8(padapter, 0x92c, 0x2);
+	rtw_btcoex_HAL_Initialize(padapter, _TRUE);
 #endif
 
 	RT_TRACE(_module_hci_hal_init_c_, _drv_info_, ("-%s\n", __FUNCTION__));
@@ -1798,49 +1738,6 @@ Hal_EfuseParseBoardType_8723BS(
 }
 
 #ifdef CONFIG_EFUSE_CONFIG_FILE
-static u32 Hal_readPGDataFromConfigFile(
-	PADAPTER	padapter,
-	u8		*PROMContent)
-{
-	u32 i;
-	struct file *fp;
-	mm_segment_t fs;
-	u8 temp[3];
-	loff_t pos = 0;
-
-
-	temp[2] = 0; // add end of string '\0'
-
-	fp = filp_open("/system/etc/wifi/rtk_efuse_8723bs.map", O_RDONLY,  0);
-	if (IS_ERR(fp)) {
-		RT_TRACE(_module_hci_hal_init_c_, _drv_err_, ("Error, Efuse configure file doesn't exist.\n"));
-		return _FAIL;
-	}
-
-	fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	DBG_871X("Efuse configure file: /system/etc/wifi/rtk_efuse_8723bs.map\n");
-	for (i=0; i<HWSET_MAX_SIZE_8723B; i++) {
-
-		vfs_read(fp, temp, 2, &pos);
-		PROMContent[i] = simple_strtoul(temp, NULL, 16 );
-		pos += 1; // Filter the space character
-#ifdef CONFIG_DEBUG
-		if (i % 16 == 0)
-			printk("\n");
-		printk("%02X ", PROMContent[i]);
-#endif
-	}
-	printk("\n");
-	DBG_871X("\n");
-	set_fs(fs);
-
-	filp_close(fp, NULL);
-
-	return _SUCCESS;
-}
-
 static void
 Hal_ReadMACAddrFromFile_8723BS(
 	PADAPTER		padapter
@@ -1918,26 +1815,57 @@ _ReadEfuseInfo8723BS(
 	)
 {
 	EEPROM_EFUSE_PRIV *pEEPROM = GET_EEPROM_EFUSE_PRIV(padapter);
-	u8			hwinfo[HWSET_MAX_SIZE_8723B];
+	u8*			hwinfo = NULL;
+#ifdef CONFIG_EFUSE_CONFIG_FILE
+	struct file *fp;
+#endif //CONFIG_EFUSE_CONFIG_FILE
 
 	RT_TRACE(_module_hci_hal_init_c_, _drv_info_, ("====>_ReadEfuseInfo8723BS()\n"));
 
 	//
 	// This part read and parse the eeprom/efuse content
 	//
-#ifdef CONFIG_EFUSE_CONFIG_FILE
-	Hal_readPGDataFromConfigFile(padapter, hwinfo);
-#else
+
+	if (sizeof(pEEPROM->efuse_eeprom_data) < HWSET_MAX_SIZE_8723B)
+		DBG_871X("[WARNING] size of efuse_eeprom_data is less than HWSET_MAX_SIZE_8723B!\n");
+
+	hwinfo = pEEPROM->efuse_eeprom_data;
+
 	Hal_InitPGData(padapter, hwinfo);
-#endif
+
+#ifdef CONFIG_EFUSE_CONFIG_FILE
+	if (check_phy_efuse_tx_power_info_valid(padapter) == _FALSE) {
+		fp = filp_open(EFUSE_MAP_PATH, O_RDONLY, 0);
+		if (fp == NULL || IS_ERR(fp)) {
+			DBG_871X("[WARNING] invalid phy efuse and no efuse file, use driver default!!\n");
+		} else {
+			Hal_readPGDataFromConfigFile(padapter, fp);
+			filp_close(fp, NULL);
+		}
+	}
+#endif //CONFIG_EFUSE_CONFIG_FILE
 
 	Hal_EfuseParseIDCode(padapter, hwinfo);
 	Hal_EfuseParseEEPROMVer_8723B(padapter, hwinfo, pEEPROM->bautoload_fail_flag);
+
 #ifdef CONFIG_EFUSE_CONFIG_FILE
-	Hal_ReadMACAddrFromFile_8723BS(padapter);
-#else
+	if (check_phy_efuse_macaddr_info_valid(padapter) == _TRUE) {
+		DBG_871X("using phy efuse mac\n");
+		Hal_GetPhyEfuseMACAddr(padapter, pEEPROM->mac_addr);
+	} else {
+		fp = filp_open(WIFIMAC_PATH, O_RDONLY, 0);
+		if (fp == NULL || IS_ERR(fp)) {
+			DBG_871X("wifimac does not exist!!\n");
+			Hal_GetPhyEfuseMACAddr(padapter, pEEPROM->mac_addr);
+		} else {
+			Hal_ReadMACAddrFromFile(padapter, fp);
+			filp_close(fp, NULL);
+		}
+	}
+#else //CONFIG_EFUSE_CONFIG_FILE
 	Hal_EfuseParseMACAddr_8723BS(padapter, hwinfo, pEEPROM->bautoload_fail_flag);
 #endif
+
 	Hal_EfuseParseTxPowerInfo_8723B(padapter, hwinfo, pEEPROM->bautoload_fail_flag);
 	Hal_EfuseParseBoardType_8723BS(padapter, hwinfo, pEEPROM->bautoload_fail_flag);
 
@@ -1962,15 +1890,6 @@ _ReadEfuseInfo8723BS(
 		Hal_ReadRFGainOffset(padapter, hwinfo, pEEPROM->bautoload_fail_flag);
 #endif	//CONFIG_RF_GAIN_OFFSET
 
-	if( sizeof(hwinfo)<= sizeof(pEEPROM->efuse_eeprom_data))
-	{
-		_rtw_memcpy(pEEPROM->efuse_eeprom_data, hwinfo, HWSET_MAX_SIZE_8723B); //restore to pEEPROM array for efuse_get drvmap
-	}
-	else
-	{
-		DBG_871X("memcpy hwinfo size to efuse_eeprom_data fail!!!.");
-		
-	}
 	RT_TRACE(_module_hci_hal_init_c_, _drv_info_, ("<==== _ReadEfuseInfo8723BS()\n"));
 }
 
@@ -2026,6 +1945,7 @@ _InitOtherVariable(
 //
 static s32 _ReadAdapterInfo8723BS(PADAPTER padapter)
 {
+    u8 val8;
 	u32 start;
 
 	RT_TRACE(_module_hci_hal_init_c_, _drv_info_, ("+_ReadAdapterInfo8723BS\n"));
@@ -2033,6 +1953,13 @@ static s32 _ReadAdapterInfo8723BS(PADAPTER padapter)
 	// before access eFuse, make sure card enable has been called
 	if(padapter->hw_init_completed == _FALSE)
 		_InitPowerOn_8723BS(padapter);
+
+
+	val8 = rtw_read8(padapter, 0x4e);
+	MSG_8192C("%s, 0x4e=0x%x\n", __func__, val8);
+	val8 |= BIT(6);
+	rtw_write8(padapter, 0x4e, val8);
+
 
 	start = rtw_get_current_time();
 
@@ -2042,7 +1969,10 @@ static s32 _ReadAdapterInfo8723BS(PADAPTER padapter)
 	_InitOtherVariable(padapter);
 
 	if(padapter->hw_init_completed == _FALSE)	
+	{
+		rtw_write8(padapter, 0x67, 0x00); // for BT, Switch Ant control to BT
 		CardDisableRTL8723BSdio(padapter);//for the power consumption issue,  wifi ko module is loaded during booting, but wifi GUI is off
+	}	
 	
 
 	MSG_8192C("<==== _ReadAdapterInfo8723BS in %d ms\n", rtw_get_passing_time_ms(start));
@@ -2136,10 +2066,12 @@ _func_enter_;
 				case WOWLAN_ENABLE:
 					DBG_871X_LEVEL(_drv_always_, "WOWLAN_ENABLE\n");
 
+					#ifndef DYNAMIC_CAMID_ALLOC
 					val8 = (psecuritypriv->dot11AuthAlgrthm == dot11AuthAlgrthm_8021X)? 0xcc: 0xcf;
 					rtw_write8(padapter, REG_SECCFG, val8);
-			DBG_871X_LEVEL(_drv_always_, "REG_SECCFG: %02x\n",
-					rtw_read8(padapter, REG_SECCFG));
+					DBG_871X_LEVEL(_drv_always_, "REG_SECCFG: %02x\n", rtw_read8(padapter, REG_SECCFG));
+					#endif
+
 					//backup data rate to register 0x8b for wowlan FW
 					rtw_write8(padapter, 0x8d, 1);
 					rtw_write8(padapter, 0x8c, 0);
@@ -2241,9 +2173,11 @@ _func_enter_;
 						rtl8723b_set_FwMediaStatusRpt_cmd(padapter, RT_MEDIA_DISCONNECT, psta->mac_id);	
 					else
 						DBG_871X("psta is null\n");
-					
+
+					#ifndef DYNAMIC_CAMID_ALLOC
 					rtw_write8(padapter, REG_SECCFG, 0x0c|BIT(5));// enable tx enc and rx dec engine, and no key search for MC/BC
 					DBG_871X_LEVEL(_drv_always_, "REG_SECCFG: %02x\n", rtw_read8(padapter, REG_SECCFG));
+					#endif
 					
 					// 1. Read wakeup reason
 					pwrctl->wowlan_wake_reason = rtw_read8(padapter, REG_WOWLAN_WAKE_REASON);
@@ -2572,9 +2506,6 @@ GetHalDefVar8723BSDIO(
 
 	switch(eVariable)
 	{
-		case HAL_DEF_UNDERCORATEDSMOOTHEDPWDB:
-			*((int *)pValue) = pHalData->dmpriv.UndecoratedSmoothedPWDB;
-			break;
 		case HAL_DEF_IS_SUPPORT_ANT_DIV:
 #ifdef CONFIG_ANTENNA_DIVERSITY
 			*((u8 *)pValue) = (IS_92C_SERIAL(pHalData->VersionID) ||(pHalData->AntDivCfg==0))?_FALSE:_TRUE;
@@ -2627,20 +2558,6 @@ void rtl8723bs_set_hal_ops(PADAPTER padapter)
 	struct hal_ops *pHalFunc = &padapter->HalFunc;
 
 _func_enter_;
-
-
-#ifdef CONFIG_CONCURRENT_MODE
-	if(padapter->isprimary)
-#endif //CONFIG_CONCURRENT_MODE
-	{
-		//set hardware operation functions
-		padapter->HalData = rtw_zvmalloc(sizeof(HAL_DATA_TYPE));
-		if(padapter->HalData == NULL){
-			DBG_8192C("cant not alloc memory for HAL DATA \n");
-		}
-	}
-
-	padapter->hal_data_sz = sizeof(HAL_DATA_TYPE);
 
 	rtl8723b_set_hal_ops(pHalFunc);
 

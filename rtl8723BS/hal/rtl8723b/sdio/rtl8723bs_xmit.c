@@ -618,7 +618,9 @@ s32 rtl8723bs_mgnt_xmit(PADAPTER padapter, struct xmit_frame *pmgntframe)
 
 	if(GetFrameSubType(pframe)==WIFI_BEACON) //dump beacon directly
 	{
-		rtw_write_port(padapter, pdvobjpriv->Queue2Pipe[pxmitbuf->ff_hwaddr], pxmitbuf->len, (u8 *)pxmitbuf);
+		ret = rtw_write_port(padapter, pdvobjpriv->Queue2Pipe[pxmitbuf->ff_hwaddr], pxmitbuf->len, (u8 *)pxmitbuf);
+		if (ret != _SUCCESS)
+			rtw_sctx_done_err(&pxmitbuf->sctx, RTW_SCTX_DONE_WRITE_PORT_ERR);
 
 		rtw_free_xmitbuf(pxmitpriv, pxmitbuf);
 	}
@@ -626,9 +628,6 @@ s32 rtl8723bs_mgnt_xmit(PADAPTER padapter, struct xmit_frame *pmgntframe)
 	{
 		enqueue_pending_xmitbuf(pxmitpriv, pxmitbuf);
 	}
-
-	if  (ret != _SUCCESS)
-		rtw_sctx_done_err(&pxmitbuf->sctx, RTW_SCTX_DONE_UNKNOWN);
 
 	return ret;
 }

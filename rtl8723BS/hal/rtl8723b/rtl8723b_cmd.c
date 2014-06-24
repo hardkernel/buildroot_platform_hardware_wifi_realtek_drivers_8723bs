@@ -1491,21 +1491,14 @@ static void rtl8723b_set_FwRemoteWakeCtrl_Cmd(PADAPTER padapter, u8 benable)
 
 	DBG_871X("%s(): Enable=%d\n", __func__, benable);
 
-#ifdef CONFIG_PNO_SUPPORT
-	SET_H2CCMD_REMOTE_WAKECTRL_ENABLE(u1H2CRemoteWakeCtrlParm, benable);
-	SET_H2CCMD_REMOTE_WAKE_CTRL_NLO_OFFLOAD_EN(u1H2CRemoteWakeCtrlParm, benable);
-#endif
-
 	if (!ppwrpriv->wowlan_pno_enable) {
 	SET_H2CCMD_REMOTE_WAKECTRL_ENABLE(u1H2CRemoteWakeCtrlParm, benable);
 	SET_H2CCMD_REMOTE_WAKE_CTRL_ARP_OFFLOAD_EN(u1H2CRemoteWakeCtrlParm, 1);
 #ifdef CONFIG_GTK_OL
-	if(psecuritypriv->binstallKCK_KEK == _TRUE && psecuritypriv->dot11PrivacyAlgrthm == _AES_)
-	{
+		if (psecuritypriv->binstallKCK_KEK == _TRUE &&
+				psecuritypriv->dot11PrivacyAlgrthm == _AES_) {
 		SET_H2CCMD_REMOTE_WAKE_CTRL_GTK_OFFLOAD_EN(u1H2CRemoteWakeCtrlParm, 1);
-	}
-	else
-	{
+		} else {
 		DBG_871X("no kck or security is not AES\n");
 		SET_H2CCMD_REMOTE_WAKE_CTRL_GTK_OFFLOAD_EN(u1H2CRemoteWakeCtrlParm, 0);
 	}
@@ -1513,15 +1506,20 @@ static void rtl8723b_set_FwRemoteWakeCtrl_Cmd(PADAPTER padapter, u8 benable)
 
 	SET_H2CCMD_REMOTE_WAKE_CTRL_FW_UNICAST_EN(u1H2CRemoteWakeCtrlParm, 1);
 
-		if ((psecuritypriv->dot11PrivacyAlgrthm == _AES_) || (psecuritypriv->dot11PrivacyAlgrthm == _NO_PRIVACY_))
+		if ((psecuritypriv->dot11PrivacyAlgrthm == _AES_) ||
+				(psecuritypriv->dot11PrivacyAlgrthm == _NO_PRIVACY_))
 		{
 			SET_H2CCMD_REMOTE_WAKE_CTRL_ARP_ACTION(u1H2CRemoteWakeCtrlParm, 0);
-		}
-		else
-		{
+		} else {
 			SET_H2CCMD_REMOTE_WAKE_CTRL_ARP_ACTION(u1H2CRemoteWakeCtrlParm, 1);
 		}
 	}
+#ifdef CONFIG_PNO_SUPPORT
+	else {
+		SET_H2CCMD_REMOTE_WAKECTRL_ENABLE(u1H2CRemoteWakeCtrlParm, benable);
+		SET_H2CCMD_REMOTE_WAKE_CTRL_NLO_OFFLOAD_EN(u1H2CRemoteWakeCtrlParm, benable);
+	}
+#endif
 exit:
 	RT_PRINT_DATA(_module_hal_init_c_, _drv_always_, "u1H2CRemoteWakeCtrlParm:", u1H2CRemoteWakeCtrlParm, H2C_REMOTE_WAKE_CTRL_LEN);
 	FillH2CCmd8723B(padapter, H2C_8723B_REMOTE_WAKE_CTRL,
@@ -2142,7 +2140,7 @@ static void rtl8723b_set_FwRsvdPagePkt(PADAPTER padapter, BOOLEAN bDLFinished)
 #endif //CONFIG_WOWLAN
 	{
 #ifdef CONFIG_PNO_SUPPORT
-		if (pwrctl->pno_in_resume == _FALSE) {
+		if (pwrctl->pno_in_resume == _FALSE && pwrctl->pno_inited == _TRUE) {
 			//Probe Request
 			RsvdPageLoc.LocProbePacket = TotalPageNum;
 			ConstructProbeReq(

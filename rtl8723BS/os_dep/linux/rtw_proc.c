@@ -318,6 +318,27 @@ int proc_get_rx_info(struct seq_file *m, void *v)
 	return 0;
 }	
 
+
+ssize_t proc_reset_rx_info(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
+{
+	struct net_device *dev = data;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct dvobj_priv *psdpriv = padapter->dvobj;
+	struct debug_priv *pdbgpriv = &psdpriv->drv_dbg;
+	char cmd[32];
+	if (buffer && !copy_from_user(cmd, buffer, sizeof(cmd))) {
+		if('0' == cmd[0]){
+			pdbgpriv->dbg_rx_ampdu_drop_count = 0;
+			pdbgpriv->dbg_rx_ampdu_forced_indicate_count = 0;
+			pdbgpriv->dbg_rx_ampdu_loss_count = 0;
+			pdbgpriv->dbg_rx_dup_mgt_frame_drop_count = 0;
+			pdbgpriv->dbg_rx_ampdu_window_shift_cnt = 0;
+		}
+	}
+
+	return count;
+}
+
 static int proc_get_cam(struct seq_file *m, void *v)
 {
 	struct net_device *dev = m->private;
@@ -368,25 +389,29 @@ static int proc_get_cam_cache(struct seq_file *m, void *v)
 	struct dvobj_priv *dvobj = adapter_to_dvobj(adapter);
 	u8 i;
 
-	DBG_871X_SEL_NL(m, "%-2s %-6s %-17s %-32s %-7s %-3s"
-		//" %-2s %-2s"
+	DBG_871X_SEL_NL(m, "cam bitmap:0x%016llx\n", dvobj->cam_ctl.bitmap);
+
+	DBG_871X_SEL_NL(m, "%-2s %-6s %-17s %-32s %-3s %-7s"
+		//" %-2s %-2s %-4s %-5s"
 		"\n"
-		, "id", "ctrl", "mac", "key", "type", "kid"
-		//, "DK", "GK"
+		, "id", "ctrl", "addr", "key", "kid", "type"
+		//, "MK", "GK", "MFB", "valid"
 	);
 
 	for (i=0;i<32;i++) {
 		if (dvobj->cam_cache[i].ctrl != 0)
-			DBG_871X_SEL_NL(m, "%2u 0x%04x "MAC_FMT" "KEY_FMT" %-7s %3u"
-				//" %2u %2u"
+			DBG_871X_SEL_NL(m, "%2u 0x%04x "MAC_FMT" "KEY_FMT" %3u %-7s"
+				//" %2u %2u 0x%02x %5u"
 				"\n", i
 				, dvobj->cam_cache[i].ctrl
 				, MAC_ARG(dvobj->cam_cache[i].mac)
 				, KEY_ARG(dvobj->cam_cache[i].key)
-				, security_type_str(((dvobj->cam_cache[i].ctrl)>>2)&0x07)
 				, (dvobj->cam_cache[i].ctrl)&0x03
+				, security_type_str(((dvobj->cam_cache[i].ctrl)>>2)&0x07)
 				//, ((dvobj->cam_cache[i].ctrl)>>5)&0x01
 				//, ((dvobj->cam_cache[i].ctrl)>>6)&0x01
+				//, ((dvobj->cam_cache[i].ctrl)>>8)&0x7f
+				//, ((dvobj->cam_cache[i].ctrl)>>15)&0x01
 			);
 	}
 
@@ -414,7 +439,7 @@ const struct rtw_proc_hdl adapter_proc_hdls [] = {
 	{"cam", proc_get_cam, proc_set_cam},
 	{"cam_cache", proc_get_cam_cache, NULL},
 	{"suspend_info", proc_get_suspend_resume_info, NULL},
-	{"rx_info", proc_get_rx_info,NULL},
+	{"rx_info", proc_get_rx_info, proc_reset_rx_info},
 
 #ifdef CONFIG_LAYER2_ROAMING
 	{"roam_flags", proc_get_roam_flags, proc_set_roam_flags},
@@ -470,6 +495,16 @@ const struct rtw_proc_hdl adapter_proc_hdls [] = {
 	{"sreset", proc_get_sreset, proc_set_sreset},
 #endif /* DBG_CONFIG_ERROR_DETECT */
 	{"linked_info_dump",proc_get_linked_info_dump,proc_set_linked_info_dump},
+#ifdef CONFIG_DBG_COUNTER
+	{"rx_logs", proc_get_rx_logs, NULL},
+	{"tx_logs", proc_get_tx_logs, NULL},
+	{"int_logs", proc_get_int_logs, NULL},
+#endif
+
+#ifdef CONFIG_PCI_HCI
+	{"rx_ring", proc_get_rx_ring, NULL},
+	{"tx_ring", proc_get_tx_ring, NULL},
+#endif
 };
 
 const int adapter_proc_hdls_num = sizeof(adapter_proc_hdls) / sizeof(struct rtw_proc_hdl);

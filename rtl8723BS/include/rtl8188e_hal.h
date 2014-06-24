@@ -208,8 +208,6 @@ typedef struct _RT_8188E_FIRMWARE_HDR
 //
 #define EFUSE_OOB_PROTECT_BYTES 		15	// PG data exclude header, dummy 6 bytes frome CP test and reserved 1byte.
 
-#define		HWSET_MAX_SIZE_88E		512
-
 #define		EFUSE_REAL_CONTENT_LEN_88E	256
 #define		EFUSE_MAP_LEN_88E		512
 #define		EFUSE_MAX_SECTION_88E		64
@@ -279,6 +277,10 @@ void Hal_DetectWoWMode(PADAPTER pAdapter);
 //void rtl8723a_ReadBluetoothCoexistInfo(PADAPTER padapter, u8 *PROMContent, BOOLEAN AutoloadFail);
 void Hal_InitChannelPlan(PADAPTER padapter);
 
+#ifdef CONFIG_RF_GAIN_OFFSET
+void Hal_ReadRFGainOffset(PADAPTER pAdapter,u8* hwinfo,BOOLEAN AutoLoadFail);
+#endif //CONFIG_RF_GAIN_OFFSET
+
 void rtl8188e_set_hal_ops(struct hal_ops *pHalFunc);
 
 // register
@@ -295,6 +297,13 @@ void _InitTransferPageSize(PADAPTER padapter);
 
 void SetHwReg8188E(PADAPTER padapter, u8 variable, u8 *val);
 void GetHwReg8188E(PADAPTER padapter, u8 variable, u8 *val);
-
+void ResumeTxBeacon(PADAPTER padapter);
+void StopTxBeacon(PADAPTER padapter);
+u8
+GetHalDefVar8188E(
+	IN	PADAPTER				Adapter,
+	IN	HAL_DEF_VARIABLE		eVariable,
+	IN	PVOID					pValue
+	);
 #endif //__RTL8188E_HAL_H__
 
