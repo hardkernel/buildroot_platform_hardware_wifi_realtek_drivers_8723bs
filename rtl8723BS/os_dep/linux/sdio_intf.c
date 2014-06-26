@@ -26,6 +26,10 @@
 #error "CONFIG_SDIO_HCI shall be on!\n"
 #endif
 
+ 
+extern void wifi_teardown_dt();
+extern int wifi_setup_dt();
+
 #ifndef dev_to_sdio_func
 #define dev_to_sdio_func(d)     container_of(d, struct sdio_func, dev)
 #endif
@@ -886,11 +890,23 @@ static int __init rtw_drv_entry(void)
 	DBG_871X_LEVEL(_drv_always_, DRV_NAME" BT-Coex version = %s\n", BTCOEXVERSION);
 #endif // BTCOEXVERSION
 
+	 
+       ret =wifi_setup_dt();
+       if(ret)
+       {
+               DBG_871X("%s: setup dt failed!!(%d)\n", __FUNCTION__, ret);
+               ret = -1;
+               goto exit;
+       }
+      
+
+
 	ret = platform_wifi_power_on();
 	if (ret)
 	{
 		DBG_871X("%s: power on failed!!(%d)\n", __FUNCTION__, ret);
 		ret = -1;
+		goto resource;
 		goto exit;
 	}
 
@@ -916,6 +932,8 @@ static int __init rtw_drv_entry(void)
 
 poweroff:
 	platform_wifi_power_off();
+resource:
+	wifi_teardown_dt();
 
 exit:
 	DBG_871X_LEVEL(_drv_always_, "module init ret=%d\n", ret);
@@ -933,6 +951,8 @@ static void __exit rtw_drv_halt(void)
 	rtw_android_wifictrl_func_del();
 
 	platform_wifi_power_off();
+
+	wifi_teardown_dt();
 
 	rtw_suspend_lock_uninit();
 	rtw_drv_proc_deinit();
