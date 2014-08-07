@@ -27,8 +27,8 @@
 #endif
 
  
-extern void wifi_teardown_dt();
-extern int wifi_setup_dt();
+extern void wifi_teardown_dt(void);
+extern int wifi_setup_dt(void);
 
 #ifndef dev_to_sdio_func
 #define dev_to_sdio_func(d)     container_of(d, struct sdio_func, dev)
