@@ -1165,9 +1165,11 @@ fwdl_stat:
 
 exit:
 	if (pFirmware)
-		rtw_mfree((u8*)pFirmware, sizeof(RT_FIRMWARE_8723B));
+		rtw_vmfree((u8*)pFirmware, sizeof(RT_FIRMWARE_8723B));
+		//rtw_mfree((u8*)pFirmware, sizeof(RT_FIRMWARE_8723B));
 	if (pBTFirmware)
-		rtw_mfree((u8*)pBTFirmware, sizeof(RT_FIRMWARE_8723B));
+		rtw_vmfree((u8*)pBTFirmware, sizeof(RT_FIRMWARE_8723B));
+		//rtw_mfree((u8*)pBTFirmware, sizeof(RT_FIRMWARE_8723B));
 	DBG_871X(" <=== rtl8723b_FirmwareDownload()\n");
 	return rtStatus;
 }
