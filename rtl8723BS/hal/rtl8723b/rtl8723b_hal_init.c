@@ -979,8 +979,11 @@ s32 rtl8723b_FirmwareDownload(PADAPTER padapter, BOOLEAN  bUsedWoWLANFw)
 #ifdef CONFIG_WOWLAN
 	RT_TRACE(_module_hal_init_c_, _drv_notice_, ("+%s, bUsedWoWLANFw:%d\n", __FUNCTION__,bUsedWoWLANFw));
 #endif
-	pFirmware = (PRT_FIRMWARE_8723B)rtw_zmalloc(sizeof(RT_FIRMWARE_8723B));
-	pBTFirmware = (PRT_FIRMWARE_8723B)rtw_zmalloc(sizeof(RT_FIRMWARE_8723B));
+// modi by lxq for Bug 101856 lack of memory
+//	pFirmware = (PRT_FIRMWARE_8723B)rtw_zmalloc(sizeof(RT_FIRMWARE_8723B));
+//	pBTFirmware = (PRT_FIRMWARE_8723B)rtw_zmalloc(sizeof(RT_FIRMWARE_8723B));
+	pFirmware = (PRT_FIRMWARE_8723B)rtw_zvmalloc(sizeof(RT_FIRMWARE_8723B));
+	pBTFirmware = (PRT_FIRMWARE_8723B)rtw_zvmalloc(sizeof(RT_FIRMWARE_8723B));
 
 	if(!pFirmware||!pBTFirmware)
 	{
