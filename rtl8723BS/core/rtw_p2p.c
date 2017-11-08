@@ -4912,8 +4912,8 @@ void init_wifidirect_info(_adapter *padapter, enum P2P_ROLE role)
 		&& pwdinfo->driver_interface != DRIVER_CFG80211
 	) {
 #ifdef CONFIG_CONCURRENT_MODE
-	if (rtw_mi_check_status(padapter, MI_LINKED))
-		union_ch = rtw_mi_get_union_chan(padapter);
+		if (rtw_mi_check_status(padapter, MI_LINKED))
+			union_ch = rtw_mi_get_union_chan(padapter);
 
 		if (union_ch != 0 &&
 			(union_ch == 1 || union_ch == 6 || union_ch == 11)
